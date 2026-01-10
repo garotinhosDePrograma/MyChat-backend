@@ -4,7 +4,7 @@ from app.services.auth_service import AuthService
 from app.utils.response import Response
 
 def require_auth(f):
-    wraps(f)
+    @wraps(f)
     def decorated_function(*args, **kwargs):
         auth_header = request.headers.get('Authorization')
 

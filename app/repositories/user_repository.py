@@ -35,7 +35,7 @@ class UserRepository:
     def update(user):
         query = """
             UPDATE users
-            SET name = %s, email = %s,
+            SET name = %s, email = %s
             WHERE id = %s
         """
         params = (user.name, user.email, user.id)
