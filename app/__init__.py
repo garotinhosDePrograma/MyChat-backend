@@ -1,6 +1,7 @@
 from flask import Flask
 from flask_cors import CORS
 from app.config import Config
+from app.utils.database import Database
 from app.controllers.auth_controller import auth_bp
 
 def create_app():
@@ -18,10 +19,19 @@ def create_app():
 
     @app.route('/health', methods=['GET'])
     def health_check():
-        return {
-            'status': 'OK',
-            'message': 'MyChat API is running'
-        }, 200
+        try:
+            Database.execute_query("SELECT 1", fetch=True)
+            return {
+                'status': 'OK',
+                'database': 'connected',
+                'message': 'API is running correctly'
+            }, 200
+        except:
+            return {
+                'status': 'ERROR',
+                'database': 'disconnected',
+                'message': 'API is not running perfectly'
+            }, 503
     
     @app.route('/', methods=['GET'])
     def index():
