@@ -18,7 +18,7 @@ def require_auth(f):
         
         token = parts[1]
 
-        user = AuthService.verify_token(token)
+        user = AuthService.get_user_from_token(token)
 
         if not user:
             return Response.unauthorized("Token inválido ou expirado.")
