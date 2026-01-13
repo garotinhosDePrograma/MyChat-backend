@@ -40,7 +40,7 @@ def send_message():
     except Exception as e:
         return Response.error(f"Erro no servidor: {str(e)}", 500)
 
-@message_bp.route('/conversation/<int:contact_user_id>', methods=["GET"])
+@message_bp.route("/conversation/<int:contact_user_id>", methods=["GET"])
 @require_auth
 def get_conversation(contact_user_id):
     try:
