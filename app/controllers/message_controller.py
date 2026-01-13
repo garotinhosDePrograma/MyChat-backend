@@ -89,7 +89,7 @@ def get_unread():
     except Exception as e:
         return Response.error(f"Erro no servidor: {str(e)}", 500)
 
-@message_bp.route('/<int:message_id', methods=["DELETE"])
+@message_bp.route('/<int:message_id>', methods=["DELETE"])
 @require_auth
 def delete_message(message_id):
     try:
