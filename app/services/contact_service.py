@@ -8,7 +8,7 @@ class ContactService:
         if user_id == contact_user_id:
             return None, "Você não pode adicionar a si mesmo como contato"
         
-        contact_user = ContactRepository.find_by_id(contact_user_id)
+        contact_user = UserRepository.find_by_id(contact_user_id)
         if not contact_user:
             return None, "Usuário não encontrado"
         
