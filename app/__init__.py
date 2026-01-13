@@ -2,7 +2,10 @@ from flask import Flask
 from flask_cors import CORS
 from app.config import Config
 from app.utils.database import Database
+
 from app.controllers.auth_controller import auth_bp
+from app.controllers.contact_controller import contact_bp
+from app.controllers.message_controller import message_bp
 
 def create_app():
     app = Flask(__name__)
@@ -16,6 +19,8 @@ def create_app():
     })
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(contact_bp)
+    app.register_blueprint(message_bp)
 
     @app.route('/health', methods=['GET'])
     def health_check():
@@ -38,7 +43,12 @@ def create_app():
         return {
             'name': 'MyChat API',
             'version': '1.0.0',
-            'status': 'running'
+            'status': 'running',
+            'endpoints': {
+                'auth': '/api/auth',
+                'contacts': '/api/contacts',
+                'messages': '/api/messages'
+            }
         }, 200
     
     return app
