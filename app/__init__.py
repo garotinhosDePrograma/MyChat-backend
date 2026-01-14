@@ -1,11 +1,16 @@
 from flask import Flask
 from flask_cors import CORS
+from flask_socketio import SocketIo
 from app.config import Config
 from app.utils.database import Database
 
 from app.controllers.auth_controller import auth_bp
 from app.controllers.contact_controller import contact_bp
 from app.controllers.message_controller import message_bp
+
+from app.sockets import register_socket_events
+
+socketio = SocketIo()
 
 def create_app():
     app = Flask(__name__)
@@ -19,6 +24,13 @@ def create_app():
         supports_credentials=False
     )
 
+    socketio.init_app(app,
+        cors_allowed_origins="*",
+        async_mode='threading',
+        logger=True,
+        engineio_logger=True
+    )
+
     @app.after_request
     def after_request(response):
         response.headers.add('Access-Control-Allow-Origin', '*')
@@ -29,6 +41,8 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(contact_bp)
     app.register_blueprint(message_bp)
+
+    register_socket_events(socketio)
 
     @app.route('/health', methods=['GET'])
     def health_check():
