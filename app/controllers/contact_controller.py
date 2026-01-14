@@ -5,6 +5,7 @@ from app.middlewares.auth_middleware import require_auth
 
 contact_bp = Blueprint('contact', __name__, url_prefix='/api/contacts')
 
+@contact_bp.route('', methods=["GET"])
 @contact_bp.route('/', methods=["GET"])
 @require_auth
 def get_contacts():
