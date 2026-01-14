@@ -3,7 +3,7 @@ from app.utils.database import Database
 
 class MessageRepository:
     @staticmethod
-    def created(message):
+    def create(message):
         query = """
             INSERT INTO messages (sender_id, receiver_id, content, is_read)
             VALUES (%s,%s,%s,%s)
@@ -30,7 +30,7 @@ class MessageRepository:
                 SELECT
                     m.*,
                     u1.name as sender_name,
-                    u2.name as receiver_name,
+                    u2.name as receiver_name
                 FROM messages
                 JOIN users u1 ON m.sender_id = u1.id
                 JOIN users u2 ON m.receiver_id = u2.id
@@ -94,9 +94,9 @@ class MessageRepository:
         query = """
         DELETE FROM messages
         WHERE
-            (m.sender_id = %s AND receiver_id = %s)
+            (sender_id = %s AND receiver_id = %s)
             OR
-            (m.sender_id = %s AND receiver_id = %s)
+            (sender_id = %s AND receiver_id = %s)
         """
         rows_affected = Database.execute_query(query, (user1_id, user2_id, user2_id, user1_id))
         return rows_affected

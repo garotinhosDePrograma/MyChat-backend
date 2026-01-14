@@ -10,13 +10,21 @@ from app.controllers.message_controller import message_bp
 def create_app():
     app = Flask(__name__)
 
-    CORS(app, resources={
-        r"/api/*": {
-            "origins": [Config.FRONTEND_URL, "http://localhost:8080"],
-            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-            "allow_headers": ["Content-Type", "Authorization"]
-        }
-    })
+    app.url_map.strict_slashes = False
+
+    CORS(app,
+        resources={r"/api/*": {"origins": "*"}},
+        allow_headers=["Content-Type", "Authorization"],
+        methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        supports_credentials=False
+    )
+
+    @app.after_request
+    def after_request(response):
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        return response
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(contact_bp)

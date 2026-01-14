@@ -60,7 +60,7 @@ def update_contact(contact_id):
         if not data:
             return Response.error("Dados inválidos")
         
-        new_name = data.get('new_name')
+        new_name = data.get('contact_name')
 
         if not new_name:
             return Response.error("Nome do contato é obrigatório")
