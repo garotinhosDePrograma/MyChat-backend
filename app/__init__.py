@@ -21,14 +21,16 @@ def create_app():
         resources={r"/api/*": {"origins": "*"}},
         allow_headers=["Content-Type", "Authorization"],
         methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        supports_credentials=False
+        supports_credentials=True
     )
 
     socketio.init_app(app,
         cors_allowed_origins="*",
         async_mode='eventlet',
         logger=True,
-        engineio_logger=True
+        engineio_logger=True,
+        ping_timeout=60,
+        ping_interval=25
     )
 
     @app.after_request
