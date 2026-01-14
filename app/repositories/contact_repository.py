@@ -22,7 +22,7 @@ class ContactRepository:
     @staticmethod
     def find_all_by_user(user_id):
         try:
-            results = Database.call_procedure('get_contacts_with_last_message', (user_id))
+            results = Database.call_procedure('get_contacts_with_last_message', (user_id,))
             return results if results else []
         except Exception as e:
             print(f"Erro ao usar procedure, usando fallback: {e}")
