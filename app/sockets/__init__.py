@@ -6,7 +6,7 @@ from app.services.message_service import MessageService
 connected_users = {}
 typing_users = {}
 
-def register_sockets_events(socketio):
+def register_socket_events(socketio):
     
     @socketio.on('connect')
     def handle_connect(auth):
