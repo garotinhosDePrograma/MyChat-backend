@@ -10,7 +10,7 @@ from app.controllers.message_controller import message_bp
 
 from app.sockets import register_socket_events
 
-socketio = SocketIo()
+socketio = SocketIO()
 
 def create_app():
     app = Flask(__name__)
