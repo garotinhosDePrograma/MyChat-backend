@@ -8,6 +8,5 @@ if __name__ == '__main__':
         app,
         host='0.0.0.0',
         port=Config.PORT,
-        debug=Config.DEBUG,
-        allow_unsafe_werkzeug=True
+        debug=Config.DEBUG
     )
