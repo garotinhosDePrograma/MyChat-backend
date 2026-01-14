@@ -4,6 +4,9 @@ PyJWT==2.8.0
 bcrypt==4.1.2
 python-dotenv==1.0.0
 mysql-connector-python==8.2.0
+gunicorn==21.2.0
 python-socketio==5.11.0
 flask-socketio==5.3.5
-gunicorn==21.2.0
+gevent==23.9.1
+gevent-websocket==0.10.1
+Pillow==10.1.0
