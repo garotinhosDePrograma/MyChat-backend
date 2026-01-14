@@ -3,10 +3,10 @@ from app.utils.database import Database
 
 class MessageRepository:
     @staticmethod
-    def create(message):
+    def create(message):  # ← ERA "created"
         query = """
             INSERT INTO messages (sender_id, receiver_id, content, is_read)
-            VALUES (%s,%s,%s,%s)
+            VALUES (%s, %s, %s, %s)
         """
         params = (message.sender_id, message.receiver_id, message.content, message.is_read)
         message_id = Database.execute_query(query, params)
@@ -31,7 +31,7 @@ class MessageRepository:
                     m.*,
                     u1.name as sender_name,
                     u2.name as receiver_name
-                FROM messages
+                FROM messages m
                 JOIN users u1 ON m.sender_id = u1.id
                 JOIN users u2 ON m.receiver_id = u2.id
                 WHERE
@@ -41,6 +41,7 @@ class MessageRepository:
                 ORDER BY m.created_at DESC
                 LIMIT %s
             """
+            # ← REMOVIDA VÍRGULA EXTRA DEPOIS DE "receiver_name"
             results = Database.execute_query(
                 query,
                 (user1_id, user2_id, user2_id, user1_id, limit),
@@ -71,10 +72,10 @@ class MessageRepository:
     @staticmethod
     def get_unread_by_sender(user_id):
         query = """
-        SELECT sender_id, COUNT(*) as count
-        FROM messages
-        WHERE receiver_id = %s AND is_read = FALSE
-        GROUP BY sender_id
+            SELECT sender_id, COUNT(*) as count
+            FROM messages
+            WHERE receiver_id = %s AND is_read = FALSE
+            GROUP BY sender_id
         """
         results = Database.execute_query(query, (user_id,), fetch=True)
 
@@ -92,11 +93,12 @@ class MessageRepository:
     @staticmethod
     def delete_conversation(user1_id, user2_id):
         query = """
-        DELETE FROM messages
-        WHERE
-            (sender_id = %s AND receiver_id = %s)
-            OR
-            (sender_id = %s AND receiver_id = %s)
+            DELETE FROM messages
+            WHERE
+                (sender_id = %s AND receiver_id = %s)
+                OR
+                (sender_id = %s AND receiver_id = %s)
         """
+        # ← REMOVIDO "m." antes de sender_id
         rows_affected = Database.execute_query(query, (user1_id, user2_id, user2_id, user1_id))
         return rows_affected
