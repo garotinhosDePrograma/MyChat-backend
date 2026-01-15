@@ -77,7 +77,7 @@ def register_socket_events(socketio):
             return
         
         user_id = get_user_id_from_sid(request.sid)
-        room_id = get_room_id(user_id)
+        room_id = get_room_id(user_id, contact_user_id)
 
         leave_room(room_id)
         print(f"Usuário {user_id} saiu da sala {room_id}")
