@@ -1,3 +1,5 @@
+# app/sockets/__init__.py - VERSÃO OTIMIZADA
+
 from flask_socketio import emit, join_room, leave_room, disconnect
 from app.services.auth_service import AuthService
 from app.repositories.user_repository import UserRepository
@@ -34,6 +36,107 @@ def register_socket_events(socketio):
 
         print(f"Usuário {user.name} (ID: {user.id}) conectado")
         return True
+    
+    # ============================================================
+    # SEND MESSAGE - VERSÃO OTIMIZADA COM CONFIRMAÇÃO RÁPIDA
+    # ============================================================
+    
+    @socketio.on('send_message')
+    def handle_send_message(data):
+        from flask import request 
+
+        receiver_id = data.get('receiver_id')
+        content = data.get('content')
+        temp_id = data.get('temp_id')  # ⭐ ID temporário do frontend
+
+        if not receiver_id or not content:
+            emit('error', {'message': 'Dados inválidos'})
+            return
+        
+        user_id = get_user_id_from_sid(request.sid)
+        if not user_id:
+            emit('error', {'message': 'Usuario não autenticado'})
+            return
+        
+        # 1️⃣ ENVIAR CONFIRMAÇÃO IMEDIATA (antes de salvar no banco)
+        # Isso reduz a latência percebida pelo usuário
+        emit('message_sending', {
+            'temp_id': temp_id,
+            'status': 'processing'
+        })
+        
+        # 2️⃣ SALVAR NO BANCO (assíncrono)
+        message, error = MessageService.send_message(user_id, receiver_id, content)
+
+        if error:
+            # ❌ ENVIAR ERRO
+            emit('message_error', {
+                'temp_id': temp_id,
+                'message': error
+            })
+            return
+        
+        user = UserRepository.find_by_id(user_id)
+
+        message_data = {
+            'id': message.id,
+            'sender_id': message.sender_id,
+            'receiver_id': message.receiver_id,
+            'content': message.content,
+            'is_read': message.is_read,
+            'created_at': message.created_at.isoformat(),
+            'sender_name': user.name,
+            'temp_id': temp_id  # ⭐ Incluir ID temporário
+        }
+
+        # 3️⃣ CONFIRMAR PARA O REMETENTE (com ID real do banco)
+        emit('message_confirmed', {
+            'temp_id': temp_id,
+            'message': message_data
+        })
+
+        # 4️⃣ ENVIAR PARA A SALA (ambos usuários)
+        room_id = get_room_id(user_id, receiver_id)
+        emit('new_message', message_data, room=room_id)
+
+        # 5️⃣ NOTIFICAR DESTINATÁRIO (se estiver online mas em outra conversa)
+        if receiver_id in connected_users:
+            receiver_sid = connected_users[receiver_id]
+            socketio.emit('message_notification', {
+                'message': message_data,
+                'from_user': {
+                    'id': user.id,
+                    'name': user.name
+                }
+            }, room=receiver_sid)
+        
+        print(f"✅ Mensagem {message.id} enviada de {user_id} para {receiver_id}")
+    
+    # ============================================================
+    # MARCAR COMO ENTREGUE (quando destinatário recebe)
+    # ============================================================
+    
+    @socketio.on('message_delivered')
+    def handle_message_delivered(data):
+        from flask import request
+        
+        message_id = data.get('message_id')
+        sender_id = data.get('sender_id')
+        
+        if not message_id or not sender_id:
+            return
+        
+        # Notificar remetente que mensagem foi entregue
+        if sender_id in connected_users:
+            sender_sid = connected_users[sender_id]
+            socketio.emit('message_status_update', {
+                'message_id': message_id,
+                'status': 'delivered'
+            }, room=sender_sid)
+    
+    # ============================================================
+    # OUTROS EVENTOS (mantidos iguais)
+    # ============================================================
     
     @socketio.on('disconnect')
     def handle_disconnect():
@@ -81,55 +184,6 @@ def register_socket_events(socketio):
 
         leave_room(room_id)
         print(f"Usuário {user_id} saiu da sala {room_id}")
-    
-    @socketio.on('send_message')
-    def handle_send_message(data):
-        from flask import request 
-
-        receiver_id = data.get('receiver_id')
-        content = data.get('content')
-
-        if not receiver_id or not content:
-            emit('error', {'message': 'Dados inválidos'})
-            return
-        
-        user_id = get_user_id_from_sid(request.sid)
-        if not user_id:
-            emit('error', {'message': 'Usuario não autenticado'})
-            return
-        
-        message, error = MessageService.send_message(user_id, receiver_id, content)
-
-        if error:
-            emit('error', {'message': error})
-            return
-        
-        user = UserRepository.find_by_id(user_id)
-
-        message_data = {
-            'id': message.id,
-            'sender_id': message.sender_id,
-            'receiver_id': message.receiver_id,
-            'content': message.content,
-            'is_read': message.is_read,
-            'created_at': message.created_at.isoformat(),
-            'sender_name': user.name
-        }
-
-        room_id = get_room_id(user_id, receiver_id)
-        emit('new_message', message_data, room=room_id)
-
-        if receiver_id in connected_users:
-            receiver_sid = connected_users[receiver_id]
-            socketio.emit('message_notification', {
-                'message': message_data,
-                'from_user': {
-                    'id': user.id,
-                    'name': user.name
-                }
-            }, room=receiver_sid)
-        
-        print(f"Mensagem enviada de {user_id} para {receiver_id}")
     
     @socketio.on('typing_start')
     def handle_typing_start(data):
