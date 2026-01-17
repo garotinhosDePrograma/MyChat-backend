@@ -23,7 +23,7 @@ class AuthService:
     def generate_token(user_id):
         payload = {
             'user_id': user_id,
-            'exp': datetime.utcnow() + timedelta(minutes=Config.JWT_EXPIRATION_HOURS),
+            'exp': datetime.utcnow() + timedelta(days=Config.JWT_EXPIRATION_HOURS),
             'iat': datetime.utcnow()
         }
 
