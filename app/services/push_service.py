@@ -1,6 +1,7 @@
 # app/services/push_service.py
 
 import json
+import base64
 from pywebpush import webpush, WebPushException
 from app.repositories.push_repository import PushRepository
 from app.config import Config
@@ -15,7 +16,11 @@ class PushService:
         """
         Retorna a chave pública VAPID
         """
-        return Config.VAPID_PUBLIC_KEY
+        key = Config.VAPID_PUBLIC_KEY.replace("\n", "")
+
+        decoded = base64.b64decode(key)
+
+        return base64.urlsafe_b64encode(decoded).rstrip(b'=').decode('utf-8')
     
     @staticmethod
     def save_subscription(user_id, subscription_data):
