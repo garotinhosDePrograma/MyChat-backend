@@ -119,6 +119,10 @@ class PushService:
                             'auth': sub['auth']
                         }
                     }
+
+                    print("DEBUG VAPID_PRIVATE_KEY:")
+                    print("type:", type(Config.VAPID_PRIVATE_KEY))
+                    print("value:", repr(Config.VAPID_PRIVATE_KEY))
                     
                     # Enviar push
                     webpush(
