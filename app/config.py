@@ -1,4 +1,7 @@
+# app/config.py - VERSÃO COM WORKAROUND BASE64
+
 import os
+import base64
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -6,8 +9,8 @@ load_dotenv()
 class Config:
     """Classe de configuração da aplicação"""
     
-    # Database - suporta CONN_URL (Railway) ou variáveis individuais
-    DB_CONNECTION_URL = os.getenv('CONN_URL')  # URL completa do Railway
+    # Database
+    DB_CONNECTION_URL = os.getenv('CONN_URL')
     DB_HOST = os.getenv('DB_HOST', 'localhost')
     DB_PORT = int(os.getenv('DB_PORT', 3306))
     DB_USER = os.getenv('DB_USER', 'root')
@@ -26,15 +29,39 @@ class Config:
 
     # Push Notifications
     VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
-    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
     VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL')
-
-    VAPID_PRIVATE_KEY = (
-        VAPID_PRIVATE_KEY
-        .strip()
-        .strip('"')
-        .replace("\\n", "\n")
-    )
+    
+    # ===================================================================
+    # WORKAROUND: Suportar VAPID_PRIVATE_KEY em Base64 ou texto normal
+    # ===================================================================
+    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
+    VAPID_PRIVATE_KEY_BASE64 = os.getenv('VAPID_PRIVATE_KEY_BASE64')
+    
+    if VAPID_PRIVATE_KEY_BASE64:
+        # Se usar Base64, decodificar
+        try:
+            VAPID_PRIVATE_KEY = base64.b64decode(VAPID_PRIVATE_KEY_BASE64).decode('utf-8')
+            print("✅ VAPID_PRIVATE_KEY carregada via Base64")
+        except Exception as e:
+            print(f"❌ Erro ao decodificar VAPID_PRIVATE_KEY_BASE64: {e}")
+            VAPID_PRIVATE_KEY = None
+    elif VAPID_PRIVATE_KEY:
+        # Processar chave normal
+        VAPID_PRIVATE_KEY = (
+            VAPID_PRIVATE_KEY
+            .strip()
+            .strip('"')
+            .strip("'")
+            .replace("\\n", "\n")
+        )
+    
+    # Debug (ajuda a diagnosticar)
+    if VAPID_PRIVATE_KEY:
+        print(f"🔑 VAPID_PRIVATE_KEY (primeiros 50 chars): {VAPID_PRIVATE_KEY[:50]}")
+        print(f"🔑 VAPID_PRIVATE_KEY (últimos 50 chars): {VAPID_PRIVATE_KEY[-50:]}")
+        print(f"🔑 VAPID_PRIVATE_KEY (tamanho total): {len(VAPID_PRIVATE_KEY)} chars")
+    else:
+        print("⚠️ VAPID_PRIVATE_KEY não definida!")
     
     # CORS
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
