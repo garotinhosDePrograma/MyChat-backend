@@ -134,7 +134,15 @@ class PushService:
                     print(f"✅ Push enviado para endpoint: {sub['endpoint'][:50]}...")
                     
                 except WebPushException as e:
-                    print(f"⚠️ Erro ao enviar push: {e}")
+                    print("⚠️ Erro ao enviar push")
+                    print("   repr:", repr(e))
+
+                    if e.response:
+                        print("   status:", e.response.status_code)
+                        print("   headers:", e.response.headers)
+                        print("   body:", e.response.text)
+                    else:
+                        print("   sem response HTTP")
                     
                     # Se subscription expirou, remover
                     if e.response and e.response.status_code in [404, 410]:
