@@ -43,7 +43,8 @@ def register_socket_events(socketio):
     
     @socketio.on('send_message')
     def handle_send_message(data):
-        from flask import request 
+        from flask import request
+        from app.services.push_service import PushService
 
         receiver_id = data.get('receiver_id')
         content = data.get('content')
@@ -88,6 +89,8 @@ def register_socket_events(socketio):
             'sender_name': user.name,
             'temp_id': temp_id  # ⭐ Incluir ID temporário
         }
+
+        PushService.send_message_notification(user, receiver_id, content)
 
         # 3️⃣ CONFIRMAR PARA O REMETENTE (com ID real do banco)
         emit('message_confirmed', {
