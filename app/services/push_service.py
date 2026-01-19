@@ -128,7 +128,7 @@ class PushService:
                     webpush(
                         subscription_info=subscription_info,
                         data=json.dumps(payload),
-                        vapid_private_key=Config.VAPID_PRIVATE_KEY.replace("\\n", "\n"),
+                        vapid_private_key=Config.VAPID_PRIVATE_KEY,
                         vapid_claims={
                             'sub': f'mailto:{Config.VAPID_CLAIM_EMAIL}'
                         }
