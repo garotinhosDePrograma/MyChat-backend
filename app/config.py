@@ -26,8 +26,15 @@ class Config:
 
     # Push Notifications
     VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
-    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY').replace("\\n", "\n")
+    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
     VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL')
+
+    VAPID_PRIVATE_KEY = (
+        VAPID_PRIVATE_KEY
+        .strip()
+        .strip('"')
+        .replace("\\n", "\n")
+    )
     
     # CORS
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
