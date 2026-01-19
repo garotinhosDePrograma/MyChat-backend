@@ -23,6 +23,11 @@ class Config:
     FLASK_ENV = os.getenv('FLASK_ENV', 'development')
     DEBUG = os.getenv('FLASK_DEBUG', 'False') == 'True'
     PORT = int(os.getenv('PORT', 5000))
+
+    # Push Notifications
+    VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
+    VAPID_PRIVATE_KEY = os.getenv('VALID_PRIVATE_KEY')
+    VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL')
     
     # CORS
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:3000')
