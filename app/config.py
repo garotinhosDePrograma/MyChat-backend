@@ -26,7 +26,7 @@ class Config:
 
     # Push Notifications
     VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY')
-    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY')
+    VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY').replace("\\n", "\n")
     VAPID_CLAIM_EMAIL = os.getenv('VAPID_CLAIM_EMAIL')
     
     # CORS
