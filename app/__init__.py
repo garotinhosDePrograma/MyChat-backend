@@ -7,6 +7,7 @@ from app.utils.database import Database
 from app.controllers.auth_controller import auth_bp
 from app.controllers.contact_controller import contact_bp
 from app.controllers.message_controller import message_bp
+from app.controllers.push_controller import push_bp
 
 from app.sockets import register_socket_events
 
@@ -43,6 +44,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(contact_bp)
     app.register_blueprint(message_bp)
+    app.register_blueprint(push_bp)
 
     register_socket_events(socketio)
 
