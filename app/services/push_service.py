@@ -121,14 +121,14 @@ class PushService:
                     }
 
                     print("DEBUG VAPID_PRIVATE_KEY:")
-                    print("type:", type(Config.VAPID_PRIVATE_KEY))
-                    print("value:", repr(Config.VAPID_PRIVATE_KEY))
+                    print("type:", type(Config.VAPID_PRIVATE_KEY_BASE64))
+                    print("value:", repr(Config.VAPID_PRIVATE_KEY_BASE64))
                     
                     # Enviar push
                     webpush(
                         subscription_info=subscription_info,
                         data=json.dumps(payload),
-                        vapid_private_key=Config.VAPID_PRIVATE_KEY,
+                        vapid_private_key=Config.VAPID_PRIVATE_KEY_BASE64,
                         vapid_claims={
                             'sub': f'mailto:{Config.VAPID_CLAIM_EMAIL}'
                         }
