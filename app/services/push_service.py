@@ -1,6 +1,7 @@
 # app/services/push_service.py - VERSÃO CORRIGIDA
 
 import json
+import time
 from pywebpush import webpush, WebPushException
 from py_vapid import Vapid01, Vapid02
 from app.repositories.push_repository import PushRepository
@@ -13,6 +14,10 @@ class PushService:
     
     # Cache do objeto Vapid (evita reprocessar a chave)
     _vapid_instance = None
+    
+    # Proteção anti-recursão: rastrear mensagens sendo processadas
+    _processing = {}  # {key: timestamp}
+    _processing_timeout = 10  # segundos
     
     @staticmethod
     def _get_vapid():
@@ -229,17 +234,46 @@ class PushService:
         Returns:
             bool: True se enviado com sucesso
         """
-        preview = message_content[:100]
-        if len(message_content) > 100:
-            preview += '...'
+        # ✅ PROTEÇÃO ANTI-RECURSÃO
+        notification_key = f"{sender_user.id}-{receiver_user_id}-{hash(message_content[:50])}"
         
-        return PushService.send_notification(
-            user_id=receiver_user_id,
-            title=f"💬 {sender_user.name}",
-            body=preview,
-            data={
-                'type': 'message',
-                'senderId': sender_user.id,
-                'senderName': sender_user.name
-            }
-        )
+        # Limpar entradas antigas (> 10 segundos)
+        current_time = time.time()
+        PushService._processing = {
+            k: v for k, v in PushService._processing.items()
+            if current_time - v < PushService._processing_timeout
+        }
+        
+        if notification_key in PushService._processing:
+            print(f"⚠️ Notificação duplicada detectada, pulando")
+            return False
+        
+        try:
+            # Marcar como processando
+            PushService._processing[notification_key] = current_time
+            
+            preview = message_content[:100]
+            if len(message_content) > 100:
+                preview += '...'
+            
+            result = PushService.send_notification(
+                user_id=receiver_user_id,
+                title=f"💬 {sender_user.name}",
+                body=preview,
+                data={
+                    'type': 'message',
+                    'senderId': sender_user.id,
+                    'senderName': sender_user.name
+                }
+            )
+            
+            return result
+            
+        finally:
+            # Remover após 1 segundo (permitir retry se necessário)
+            import threading
+            def cleanup():
+                time.sleep(1)
+                PushService._processing.pop(notification_key, None)
+            
+            threading.Thread(target=cleanup, daemon=True).start()
