@@ -255,9 +255,12 @@ class PushService:
             return False
     
     @staticmethod
-    def send_notification(user_id, title, body, data=None, icon=None, badge=None):
+    def send_notification(user_id, title, body, data=None, icon=None, badge=None, ignore_errors=False):
         """
         Envia uma notificação push para um usuário
+        
+        Args:
+            ignore_errors (bool): Se True, ignora erros 401/403 (útil para testes)
         """
         try:
             subscriptions = PushRepository.find_by_user_id(user_id)
@@ -343,7 +346,11 @@ class PushService:
                             success_count += 1
                             print(f"✅ Push enviado com sucesso!")
                         elif response.status_code in [404, 410]:
-                            print(f"🗑️ Subscription expirada, removendo...")
+                            print(f"🗑️ Subscription expirada (410/404), removendo...")
+                            PushRepository.delete_subscription(user_id, endpoint)
+                        elif response.status_code in [401, 403] and not ignore_errors:
+                            # VAPID key mismatch - subscription inválida
+                            print(f"🗑️ Subscription com chave inválida (401/403), removendo...")
                             PushRepository.delete_subscription(user_id, endpoint)
                         else:
                             print(f"⚠️ Status {response.status_code}")
