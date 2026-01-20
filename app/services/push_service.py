@@ -1,13 +1,15 @@
-# app/services/push_service.py - VERSÃO COM HTTPX (SEM PYWEBPUSH)
+# app/services/push_service.py - VERSÃO FINAL COM CRIPTOGRAFIA
 
 import json
 import time
 import base64
-import hashlib
-import hmac
+import os
 from urllib.parse import urlparse
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 import httpx
 
@@ -17,7 +19,7 @@ from app.config import Config
 
 class PushService:
     """
-    Serviço para gerenciar Web Push Notifications - USANDO HTTPX
+    Serviço para gerenciar Web Push Notifications - COM CRIPTOGRAFIA AES-GCM
     """
     
     _vapid_instance = None
@@ -63,10 +65,118 @@ class PushService:
         return Config.VAPID_PUBLIC_KEY
     
     @staticmethod
+    def _base64_url_decode(data):
+        """Decodifica Base64URL"""
+        padding = '=' * (4 - len(data) % 4)
+        return base64.urlsafe_b64decode(data + padding)
+    
+    @staticmethod
+    def _base64_url_encode(data):
+        """Codifica em Base64URL"""
+        return base64.urlsafe_b64encode(data).rstrip(b'=').decode('utf-8')
+    
+    @staticmethod
+    def _encrypt_payload(payload_json, p256dh, auth):
+        """
+        Criptografa o payload usando AES-GCM (RFC 8291)
+        
+        Args:
+            payload_json (str): Payload em JSON
+            p256dh (str): Chave pública do cliente (Base64URL)
+            auth (str): Auth secret do cliente (Base64URL)
+        
+        Returns:
+            bytes: Payload criptografado
+        """
+        try:
+            # Decodificar chaves do cliente
+            client_public_key = PushService._base64_url_decode(p256dh)
+            auth_secret = PushService._base64_url_decode(auth)
+            
+            # Gerar chave ECDH efêmera
+            private_key = ec.generate_private_key(ec.SECP256R1(), default_backend())
+            public_key = private_key.public_key()
+            
+            # Serializar chave pública do servidor (65 bytes não comprimida)
+            server_public_key = public_key.public_bytes(
+                encoding=serialization.Encoding.X962,
+                format=serialization.PublicFormat.UncompressedPoint
+            )
+            
+            # Carregar chave pública do cliente
+            client_public_key_obj = ec.EllipticCurvePublicKey.from_encoded_point(
+                ec.SECP256R1(),
+                client_public_key
+            )
+            
+            # Calcular shared secret via ECDH
+            shared_secret = private_key.exchange(ec.ECDH(), client_public_key_obj)
+            
+            # Derivar chave de criptografia usando HKDF
+            # Info para IKM
+            ikm_info = b'WebPush: info\x00' + client_public_key + server_public_key
+            
+            ikm = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=auth_secret,
+                info=ikm_info,
+                backend=default_backend()
+            ).derive(shared_secret)
+            
+            # Gerar salt aleatório (16 bytes)
+            salt = os.urandom(16)
+            
+            # Derivar CEK (Content Encryption Key)
+            cek_info = b'Content-Encoding: aes128gcm\x00'
+            
+            cek = HKDF(
+                algorithm=hashes.SHA256(),
+                length=16,
+                salt=salt,
+                info=cek_info,
+                backend=default_backend()
+            ).derive(ikm)
+            
+            # Derivar nonce
+            nonce_info = b'Content-Encoding: nonce\x00'
+            
+            nonce = HKDF(
+                algorithm=hashes.SHA256(),
+                length=12,
+                salt=salt,
+                info=nonce_info,
+                backend=default_backend()
+            ).derive(ikm)
+            
+            # Preparar payload
+            payload_bytes = payload_json.encode('utf-8')
+            
+            # Padding (mínimo 2 bytes: 0x02 0x00)
+            padding = b'\x02\x00'
+            plaintext = payload_bytes + padding
+            
+            # Criptografar com AES-GCM
+            aesgcm = AESGCM(cek)
+            ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+            
+            # Montar mensagem final: salt (16) + rs (4) + idlen (1) + keyid (65) + ciphertext
+            rs = (4096).to_bytes(4, 'big')  # Record size
+            idlen = (65).to_bytes(1, 'big')  # Tamanho da chave pública
+            
+            encrypted_message = salt + rs + idlen + server_public_key + ciphertext
+            
+            return encrypted_message
+            
+        except Exception as e:
+            print(f"❌ Erro ao criptografar payload: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
+    @staticmethod
     def _generate_vapid_headers(endpoint, vapid_claims):
-        """
-        Gera headers VAPID para autenticação
-        """
+        """Gera headers VAPID para autenticação"""
         try:
             vapid = PushService._get_vapid()
             
@@ -131,7 +241,7 @@ class PushService:
     @staticmethod
     def send_notification(user_id, title, body, data=None, icon=None, badge=None):
         """
-        Envia uma notificação push para um usuário - USANDO HTTPX
+        Envia uma notificação push para um usuário
         """
         try:
             subscriptions = PushRepository.find_by_user_id(user_id)
@@ -170,6 +280,15 @@ class PushService:
                 for sub in subscriptions:
                     try:
                         endpoint = sub['endpoint']
+                        p256dh = sub['p256dh']
+                        auth = sub['auth']
+                        
+                        # ✅ CRIPTOGRAFAR PAYLOAD
+                        encrypted_payload = PushService._encrypt_payload(
+                            payload_json,
+                            p256dh,
+                            auth
+                        )
                         
                         # Gerar headers VAPID
                         vapid_headers = PushService._generate_vapid_headers(
@@ -185,10 +304,10 @@ class PushService:
                             'TTL': '86400'
                         }
                         
-                        # ✅ ENVIAR PUSH VIA HTTPX (NÃO USA urllib3/requests)
+                        # ✅ ENVIAR PUSH COM PAYLOAD CRIPTOGRAFADO
                         response = client.post(
                             endpoint,
-                            content=payload_json.encode('utf-8'),
+                            content=encrypted_payload,
                             headers=headers
                         )
                         
@@ -199,7 +318,7 @@ class PushService:
                             print(f"🗑️ Subscription expirada, removendo...")
                             PushRepository.delete_subscription(user_id, endpoint)
                         else:
-                            print(f"⚠️ Status {response.status_code}: {response.text[:100]}")
+                            print(f"⚠️ Status {response.status_code}: {response.text[:200]}")
                         
                     except httpx.HTTPError as e:
                         print(f"❌ Erro HTTP ao enviar push: {e}")
@@ -207,6 +326,8 @@ class PushService:
                         print(f"❌ Erro inesperado ao enviar push:")
                         print(f"   Type: {type(e).__name__}")
                         print(f"   Message: {str(e)}")
+                        import traceback
+                        traceback.print_exc()
             
             return success_count > 0
             
