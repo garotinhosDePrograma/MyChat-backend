@@ -1,73 +1,47 @@
-# app/services/push_service.py - COM FIX PARA SSL RECURSION
+# app/services/push_service.py - VERSÃO COM HTTPX (SEM PYWEBPUSH)
 
 import json
 import time
-import ssl
-import sys
+import base64
+import hashlib
+import hmac
+from urllib.parse import urlparse
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.backends import default_backend
+import httpx
 
-# ========================================
-# 🔧 FIX PARA RECURSIONERROR NO PYTHON 3.11.9
-# ========================================
-if sys.version_info >= (3, 11) and sys.version_info < (3, 12):
-    # Monkey patch para evitar recursão infinita no ssl.options
-    original_options_setter = ssl.SSLContext.options.fset
-    
-    def patched_options_setter(self, value):
-        if hasattr(self, '_options_being_set'):
-            return
-        try:
-            self._options_being_set = True
-            original_options_setter(self, value)
-        finally:
-            delattr(self, '_options_being_set')
-    
-    ssl.SSLContext.options = property(
-        ssl.SSLContext.options.fget,
-        patched_options_setter
-    )
-    print("✅ SSL recursion patch aplicado (Python 3.11.x)")
-
-from pywebpush import webpush, WebPushException
 from py_vapid import Vapid01, Vapid02
 from app.repositories.push_repository import PushRepository
 from app.config import Config
 
 class PushService:
     """
-    Serviço para gerenciar Web Push Notifications
+    Serviço para gerenciar Web Push Notifications - USANDO HTTPX
     """
     
-    # Cache do objeto Vapid (evita reprocessar a chave)
     _vapid_instance = None
-    
-    # Proteção anti-recursão: rastrear mensagens sendo processadas
-    _processing = {}  # {key: timestamp}
-    _processing_timeout = 10  # segundos
+    _processing = {}
+    _processing_timeout = 10
     
     @staticmethod
     def _get_vapid():
         """Obtém instância Vapid (com cache)"""
         if PushService._vapid_instance is None:
             try:
-                # Tentar criar Vapid a partir da chave privada
                 private_key = Config.VAPID_PRIVATE_KEY
                 
                 if not private_key:
                     raise ValueError("VAPID_PRIVATE_KEY não configurada")
                 
                 print(f"🔑 Carregando VAPID (tamanho: {len(private_key)} chars)")
-                print(f"🔑 Primeiros 50: {private_key[:50]}")
-                print(f"🔑 Últimos 50: {private_key[-50:]}")
                 
-                # Tentar diferentes métodos de inicialização
                 try:
-                    # Método 1: Vapid02 (mais recente)
                     vapid = Vapid02.from_string(private_key)
                     print("✅ Usando Vapid02 (draft-02)")
                 except Exception as e1:
                     print(f"⚠️ Vapid02 falhou: {e1}")
                     try:
-                        # Método 2: Vapid01 (compatibilidade)
                         vapid = Vapid01.from_string(private_key)
                         print("✅ Usando Vapid01 (draft-01)")
                     except Exception as e2:
@@ -87,19 +61,40 @@ class PushService:
     def get_vapid_public_key():
         """Retorna a chave pública VAPID"""
         return Config.VAPID_PUBLIC_KEY
-        
+    
+    @staticmethod
+    def _generate_vapid_headers(endpoint, vapid_claims):
+        """
+        Gera headers VAPID para autenticação
+        """
+        try:
+            vapid = PushService._get_vapid()
+            
+            # Extrair audience do endpoint
+            parsed = urlparse(endpoint)
+            audience = f"{parsed.scheme}://{parsed.netloc}"
+            
+            # Gerar JWT token
+            vapid_claims['aud'] = audience
+            vapid_claims['exp'] = str(int(time.time()) + 43200)  # 12 horas
+            
+            # Assinar com VAPID
+            if isinstance(vapid, Vapid02):
+                token = vapid.sign(vapid_claims, crypto_key=Config.VAPID_PUBLIC_KEY)
+            else:
+                token = vapid.sign(vapid_claims)
+            
+            return {
+                'Authorization': f'vapid t={token}, k={Config.VAPID_PUBLIC_KEY}'
+            }
+            
+        except Exception as e:
+            print(f"❌ Erro ao gerar headers VAPID: {e}")
+            raise
+    
     @staticmethod
     def save_subscription(user_id, subscription_data):
-        """
-        Salva a subscription de um usuário
-        
-        Args:
-            user_id (int): ID do usuário
-            subscription_data (dict): Dados da subscription
-            
-        Returns:
-            bool: True se salvo com sucesso
-        """
+        """Salva a subscription de um usuário"""
         try:
             endpoint = subscription_data.get('endpoint')
             p256dh = subscription_data.get('keys', {}).get('p256dh')
@@ -109,7 +104,6 @@ class PushService:
                 print("❌ Dados de subscription incompletos")
                 return False
             
-            # Verificar se já existe
             existing = PushRepository.find_by_endpoint(endpoint)
             
             if existing:
@@ -127,16 +121,7 @@ class PushService:
     
     @staticmethod
     def remove_subscription(user_id, endpoint):
-        """
-        Remove a subscription de um usuário
-        
-        Args:
-            user_id (int): ID do usuário
-            endpoint (str): Endpoint da subscription
-            
-        Returns:
-            bool: True se removido com sucesso
-        """
+        """Remove a subscription de um usuário"""
         try:
             return PushRepository.delete_subscription(user_id, endpoint)
         except Exception as e:
@@ -146,21 +131,9 @@ class PushService:
     @staticmethod
     def send_notification(user_id, title, body, data=None, icon=None, badge=None):
         """
-        Envia uma notificação push para um usuário
-        
-        Args:
-            user_id (int): ID do usuário destinatário
-            title (str): Título da notificação
-            body (str): Corpo da notificação
-            data (dict): Dados adicionais
-            icon (str): URL do ícone
-            badge (str): URL do badge
-            
-        Returns:
-            bool: True se enviado com sucesso
+        Envia uma notificação push para um usuário - USANDO HTTPX
         """
         try:
-            # Buscar subscriptions do usuário
             subscriptions = PushRepository.find_by_user_id(user_id)
             
             if not subscriptions:
@@ -176,10 +149,9 @@ class PushService:
                 'data': data or {}
             }
             
-            success_count = 0
+            payload_json = json.dumps(payload)
             
-            # Obter Vapid
-            vapid = PushService._get_vapid()
+            success_count = 0
             
             # Validar VAPID_CLAIM_EMAIL
             claim_email = Config.VAPID_CLAIM_EMAIL
@@ -189,55 +161,53 @@ class PushService:
             
             if not claim_email.startswith('mailto:'):
                 claim_email = f'mailto:{claim_email}'
-                print(f"⚠️ Adicionando 'mailto:' ao email: {claim_email}")
             
             print(f"📧 Usando VAPID claim email: {claim_email}")
-            
-            # Criar claims
-            vapid_claims = {'sub': claim_email}
-            
             print(f"📤 Enviando push para {len(subscriptions)} subscription(s)")
             
-            # Enviar para todas as subscriptions do usuário
-            for sub in subscriptions:
-                try:
-                    subscription_info = {
-                        'endpoint': sub['endpoint'],
-                        'keys': {
-                            'p256dh': sub['p256dh'],
-                            'auth': sub['auth']
-                        }
-                    }
-                    
-                    # Enviar push usando pywebpush
-                    response = webpush(
-                        subscription_info=subscription_info,
-                        data=json.dumps(payload),
-                        vapid_private_key=Config.VAPID_PRIVATE_KEY,
-                        vapid_claims=vapid_claims,
-                        content_encoding="aes128gcm"  # Encoding padrão
-                    )
-                    
-                    success_count += 1
-                    print(f"✅ Push enviado para endpoint: {sub['endpoint'][:50]}...")
-                    
-                except WebPushException as e:
-                    print(f"⚠️ WebPushException:")
-                    print(f"   Status: {e.response.status_code if e.response else 'N/A'}")
-                    print(f"   Message: {str(e)}")
-                    
-                    # Se subscription expirou, remover
-                    if e.response and e.response.status_code in [404, 410]:
-                        print(f"🗑️ Removendo subscription expirada")
-                        PushRepository.delete_subscription(user_id, sub['endpoint'])
-                
-                except Exception as e:
-                    print(f"❌ Erro inesperado ao enviar push:")
-                    print(f"   Type: {type(e).__name__}")
-                    print(f"   Message: {str(e)}")
-                    import traceback
-                    traceback.print_exc()
+            # Criar cliente httpx
+            with httpx.Client(timeout=10.0) as client:
+                for sub in subscriptions:
+                    try:
+                        endpoint = sub['endpoint']
                         
+                        # Gerar headers VAPID
+                        vapid_headers = PushService._generate_vapid_headers(
+                            endpoint,
+                            {'sub': claim_email}
+                        )
+                        
+                        # Headers completos
+                        headers = {
+                            **vapid_headers,
+                            'Content-Type': 'application/octet-stream',
+                            'Content-Encoding': 'aes128gcm',
+                            'TTL': '86400'
+                        }
+                        
+                        # ✅ ENVIAR PUSH VIA HTTPX (NÃO USA urllib3/requests)
+                        response = client.post(
+                            endpoint,
+                            content=payload_json.encode('utf-8'),
+                            headers=headers
+                        )
+                        
+                        if response.status_code in [200, 201]:
+                            success_count += 1
+                            print(f"✅ Push enviado para endpoint: {endpoint[:50]}...")
+                        elif response.status_code in [404, 410]:
+                            print(f"🗑️ Subscription expirada, removendo...")
+                            PushRepository.delete_subscription(user_id, endpoint)
+                        else:
+                            print(f"⚠️ Status {response.status_code}: {response.text[:100]}")
+                        
+                    except httpx.HTTPError as e:
+                        print(f"❌ Erro HTTP ao enviar push: {e}")
+                    except Exception as e:
+                        print(f"❌ Erro inesperado ao enviar push:")
+                        print(f"   Type: {type(e).__name__}")
+                        print(f"   Message: {str(e)}")
+            
             return success_count > 0
             
         except Exception as e:
@@ -250,19 +220,9 @@ class PushService:
     def send_message_notification(sender_user, receiver_user_id, message_content):
         """
         Envia notificação de nova mensagem
-        
-        Args:
-            sender_user: Objeto User do remetente
-            receiver_user_id (int): ID do destinatário
-            message_content (str): Conteúdo da mensagem
-            
-        Returns:
-            bool: True se enviado com sucesso
         """
-        # ✅ PROTEÇÃO ANTI-RECURSÃO
         notification_key = f"{sender_user.id}-{receiver_user_id}-{hash(message_content[:50])}"
         
-        # Limpar entradas antigas (> 10 segundos)
         current_time = time.time()
         PushService._processing = {
             k: v for k, v in PushService._processing.items()
@@ -274,7 +234,6 @@ class PushService:
             return False
         
         try:
-            # Marcar como processando
             PushService._processing[notification_key] = current_time
             
             preview = message_content[:100]
@@ -295,7 +254,6 @@ class PushService:
             return result
             
         finally:
-            # Remover após 1 segundo (permitir retry se necessário)
             import threading
             def cleanup():
                 time.sleep(1)
