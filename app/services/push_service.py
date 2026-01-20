@@ -151,13 +151,20 @@ class PushService:
             # Obter Vapid
             vapid = PushService._get_vapid()
             
-            # Criar claims
-            vapid_claims = {
-                'sub': Config.VAPID_CLAIM_EMAIL or 'mailto:admin@mychat.com'
-            }
+            # Validar VAPID_CLAIM_EMAIL
+            claim_email = Config.VAPID_CLAIM_EMAIL
+            if not claim_email:
+                claim_email = 'mailto:admin@mychat.com'
+                print(f"⚠️ VAPID_CLAIM_EMAIL não configurado, usando padrão: {claim_email}")
             
-            # Gerar headers VAPID
-            vapid_headers = vapid.sign(vapid_claims)
+            if not claim_email.startswith('mailto:'):
+                claim_email = f'mailto:{claim_email}'
+                print(f"⚠️ Adicionando 'mailto:' ao email: {claim_email}")
+            
+            print(f"📧 Usando VAPID claim email: {claim_email}")
+            
+            # Criar claims
+            vapid_claims = {'sub': claim_email}
             
             print(f"📤 Enviando push para {len(subscriptions)} subscription(s)")
             
@@ -177,7 +184,8 @@ class PushService:
                         subscription_info=subscription_info,
                         data=json.dumps(payload),
                         vapid_private_key=Config.VAPID_PRIVATE_KEY,
-                        vapid_claims=vapid_claims
+                        vapid_claims=vapid_claims,
+                        content_encoding="aes128gcm"  # Encoding padrão
                     )
                     
                     success_count += 1
