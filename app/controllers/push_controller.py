@@ -92,21 +92,24 @@ def unsubscribe():
 def send_test_notification():
     """
     Envia uma notificação de teste para o usuário
+    ✅ Remove automaticamente subscriptions inválidas (401/403)
     """
     try:
         user = g.current_user
         
+        # ✅ Enviar com ignore_errors=False para limpar subscriptions inválidas
         success = PushService.send_notification(
             user.id,
             title="🔔 Notificação de Teste",
             body="As notificações estão funcionando!",
-            data={'type': 'test'}
+            data={'type': 'test'},
+            ignore_errors=False  # Remove subscriptions com erro 401/403
         )
         
         if success:
             return Response.success(message="Notificação enviada")
         else:
-            return Response.error("Erro ao enviar notificação")
+            return Response.error("Nenhuma subscription válida encontrada. Por favor, ative as notificações novamente.")
             
     except Exception as e:
-        return Response.error(f"Erro no servidor: {str(e)}", 500)
+        return Response.error(f"Erro ao enviar notificação: {str(e)}", 500)
