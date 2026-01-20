@@ -40,7 +40,7 @@ def register_socket_events(socketio):
     # ============================================================
     # SEND MESSAGE - VERSÃO OTIMIZADA COM CONFIRMAÇÃO RÁPIDA
     # ============================================================
-    
+
     @socketio.on('send_message')
     def handle_send_message(data):
         from flask import request
@@ -48,7 +48,7 @@ def register_socket_events(socketio):
 
         receiver_id = data.get('receiver_id')
         content = data.get('content')
-        temp_id = data.get('temp_id')  # ⭐ ID temporário do frontend
+        temp_id = data.get('temp_id')
 
         if not receiver_id or not content:
             emit('error', {'message': 'Dados inválidos'})
@@ -60,7 +60,6 @@ def register_socket_events(socketio):
             return
         
         # 1️⃣ ENVIAR CONFIRMAÇÃO IMEDIATA (antes de salvar no banco)
-        # Isso reduz a latência percebida pelo usuário
         emit('message_sending', {
             'temp_id': temp_id,
             'status': 'processing'
@@ -70,7 +69,6 @@ def register_socket_events(socketio):
         message, error = MessageService.send_message(user_id, receiver_id, content)
 
         if error:
-            # ❌ ENVIAR ERRO
             emit('message_error', {
                 'temp_id': temp_id,
                 'message': error
@@ -87,22 +85,35 @@ def register_socket_events(socketio):
             'is_read': message.is_read,
             'created_at': message.created_at.isoformat(),
             'sender_name': user.name,
-            'temp_id': temp_id  # ⭐ Incluir ID temporário
+            'temp_id': temp_id
         }
 
-        PushService.send_message_notification(user, receiver_id, content)
+        # 3️⃣ ENVIAR PUSH NOTIFICATION (COM PROTEÇÃO ANTI-RECURSÃO)
+        try:
+            # ✅ Só enviar push se o destinatário NÃO estiver conectado OU
+            # estiver em outra conversa
+            is_receiver_online = receiver_id in connected_users
+            
+            if is_receiver_online:
+                print(f"⚠️ Destinatário {receiver_id} está online, pulando push notification")
+            else:
+                print(f"📲 Destinatário {receiver_id} offline, enviando push...")
+                PushService.send_message_notification(user, receiver_id, content)
+        except Exception as push_error:
+            # ✅ NÃO propagar erro de push - mensagem já foi salva
+            print(f"⚠️ Erro ao enviar push (não crítico): {push_error}")
 
-        # 3️⃣ CONFIRMAR PARA O REMETENTE (com ID real do banco)
+        # 4️⃣ CONFIRMAR PARA O REMETENTE
         emit('message_confirmed', {
             'temp_id': temp_id,
             'message': message_data
         })
 
-        # 4️⃣ ENVIAR PARA A SALA (ambos usuários)
+        # 5️⃣ ENVIAR PARA A SALA (ambos usuários)
         room_id = get_room_id(user_id, receiver_id)
         emit('new_message', message_data, room=room_id)
 
-        # 5️⃣ NOTIFICAR DESTINATÁRIO (se estiver online mas em outra conversa)
+        # 6️⃣ NOTIFICAR DESTINATÁRIO (se estiver online mas em outra conversa)
         if receiver_id in connected_users:
             receiver_sid = connected_users[receiver_id]
             socketio.emit('message_notification', {
