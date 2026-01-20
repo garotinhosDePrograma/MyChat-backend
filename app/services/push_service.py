@@ -1,7 +1,32 @@
-# app/services/push_service.py - VERSÃO CORRIGIDA
+# app/services/push_service.py - COM FIX PARA SSL RECURSION
 
 import json
 import time
+import ssl
+import sys
+
+# ========================================
+# 🔧 FIX PARA RECURSIONERROR NO PYTHON 3.11.9
+# ========================================
+if sys.version_info >= (3, 11) and sys.version_info < (3, 12):
+    # Monkey patch para evitar recursão infinita no ssl.options
+    original_options_setter = ssl.SSLContext.options.fset
+    
+    def patched_options_setter(self, value):
+        if hasattr(self, '_options_being_set'):
+            return
+        try:
+            self._options_being_set = True
+            original_options_setter(self, value)
+        finally:
+            delattr(self, '_options_being_set')
+    
+    ssl.SSLContext.options = property(
+        ssl.SSLContext.options.fget,
+        patched_options_setter
+    )
+    print("✅ SSL recursion patch aplicado (Python 3.11.x)")
+
 from pywebpush import webpush, WebPushException
 from py_vapid import Vapid01, Vapid02
 from app.repositories.push_repository import PushRepository
