@@ -1,4 +1,4 @@
-# app/services/push_service.py - VERSÃO FINAL COM CRIPTOGRAFIA
+# app/services/push_service.py - VERSÃO FINAL CORRIGIDA
 
 import json
 import time
@@ -19,7 +19,7 @@ from app.config import Config
 
 class PushService:
     """
-    Serviço para gerenciar Web Push Notifications - COM CRIPTOGRAFIA AES-GCM
+    Serviço para gerenciar Web Push Notifications
     """
     
     _vapid_instance = None
@@ -79,14 +79,6 @@ class PushService:
     def _encrypt_payload(payload_json, p256dh, auth):
         """
         Criptografa o payload usando AES-GCM (RFC 8291)
-        
-        Args:
-            payload_json (str): Payload em JSON
-            p256dh (str): Chave pública do cliente (Base64URL)
-            auth (str): Auth secret do cliente (Base64URL)
-        
-        Returns:
-            bytes: Payload criptografado
         """
         try:
             # Decodificar chaves do cliente
@@ -113,7 +105,6 @@ class PushService:
             shared_secret = private_key.exchange(ec.ECDH(), client_public_key_obj)
             
             # Derivar chave de criptografia usando HKDF
-            # Info para IKM
             ikm_info = b'WebPush: info\x00' + client_public_key + server_public_key
             
             ikm = HKDF(
@@ -166,6 +157,8 @@ class PushService:
             
             encrypted_message = salt + rs + idlen + server_public_key + ciphertext
             
+            print(f"🔐 Payload criptografado: {len(encrypted_message)} bytes")
+            
             return encrypted_message
             
         except Exception as e:
@@ -176,7 +169,10 @@ class PushService:
     
     @staticmethod
     def _generate_vapid_headers(endpoint, vapid_claims):
-        """Gera headers VAPID para autenticação"""
+        """
+        Gera headers VAPID para autenticação
+        ✅ FORMATO CORRETO: t=token; k=publicKey
+        """
         try:
             vapid = PushService._get_vapid()
             
@@ -184,22 +180,42 @@ class PushService:
             parsed = urlparse(endpoint)
             audience = f"{parsed.scheme}://{parsed.netloc}"
             
-            # Gerar JWT token
-            vapid_claims['aud'] = audience
-            vapid_claims['exp'] = str(int(time.time()) + 43200)  # 12 horas
-            
-            # Assinar com VAPID
-            if isinstance(vapid, Vapid02):
-                token = vapid.sign(vapid_claims, crypto_key=Config.VAPID_PUBLIC_KEY)
-            else:
-                token = vapid.sign(vapid_claims)
-            
-            return {
-                'Authorization': f'vapid t={token}, k={Config.VAPID_PUBLIC_KEY}'
+            # Preparar claims
+            claims = {
+                'sub': vapid_claims.get('sub', 'mailto:admin@mychat.com'),
+                'aud': audience,
+                'exp': int(time.time()) + 43200  # 12 horas
             }
+            
+            print(f"🔐 VAPID claims: {claims}")
+            
+            # ✅ FIX: Assinar corretamente dependendo da versão do Vapid
+            if isinstance(vapid, Vapid02):
+                # Vapid02 retorna um dicionário com Authorization header
+                result = vapid.sign(claims)
+                
+                # Se retornou um dict com 'Authorization'
+                if isinstance(result, dict) and 'Authorization' in result:
+                    auth_header = result['Authorization']
+                    print(f"✅ VAPID header (Vapid02): {auth_header[:80]}...")
+                    return {'Authorization': auth_header}
+                else:
+                    # Se retornou apenas o token
+                    token = result
+                    auth_header = f"vapid t={token}, k={Config.VAPID_PUBLIC_KEY}"
+                    print(f"✅ VAPID header (manual): {auth_header[:80]}...")
+                    return {'Authorization': auth_header}
+            else:
+                # Vapid01
+                token = vapid.sign(claims)
+                auth_header = f"WebPush {token}"
+                print(f"✅ VAPID header (Vapid01): {auth_header[:80]}...")
+                return {'Authorization': auth_header}
             
         except Exception as e:
             print(f"❌ Erro ao gerar headers VAPID: {e}")
+            import traceback
+            traceback.print_exc()
             raise
     
     @staticmethod
@@ -260,6 +276,7 @@ class PushService:
             }
             
             payload_json = json.dumps(payload)
+            print(f"📦 Payload JSON ({len(payload_json)} chars): {payload_json[:100]}...")
             
             success_count = 0
             
@@ -277,11 +294,16 @@ class PushService:
             
             # Criar cliente httpx
             with httpx.Client(timeout=10.0) as client:
-                for sub in subscriptions:
+                for i, sub in enumerate(subscriptions, 1):
                     try:
                         endpoint = sub['endpoint']
                         p256dh = sub['p256dh']
                         auth = sub['auth']
+                        
+                        print(f"\n📨 Subscription {i}/{len(subscriptions)}")
+                        print(f"   Endpoint: {endpoint[:60]}...")
+                        print(f"   p256dh: {p256dh[:20]}...")
+                        print(f"   auth: {auth[:20]}...")
                         
                         # ✅ CRIPTOGRAFAR PAYLOAD
                         encrypted_payload = PushService._encrypt_payload(
@@ -304,6 +326,10 @@ class PushService:
                             'TTL': '86400'
                         }
                         
+                        print(f"📋 Headers:")
+                        for k, v in headers.items():
+                            print(f"   {k}: {v[:80] if len(str(v)) > 80 else v}")
+                        
                         # ✅ ENVIAR PUSH COM PAYLOAD CRIPTOGRAFADO
                         response = client.post(
                             endpoint,
@@ -311,14 +337,17 @@ class PushService:
                             headers=headers
                         )
                         
+                        print(f"📬 Response: {response.status_code}")
+                        
                         if response.status_code in [200, 201]:
                             success_count += 1
-                            print(f"✅ Push enviado para endpoint: {endpoint[:50]}...")
+                            print(f"✅ Push enviado com sucesso!")
                         elif response.status_code in [404, 410]:
                             print(f"🗑️ Subscription expirada, removendo...")
                             PushRepository.delete_subscription(user_id, endpoint)
                         else:
-                            print(f"⚠️ Status {response.status_code}: {response.text[:200]}")
+                            print(f"⚠️ Status {response.status_code}")
+                            print(f"   Response: {response.text[:300]}")
                         
                     except httpx.HTTPError as e:
                         print(f"❌ Erro HTTP ao enviar push: {e}")
@@ -328,6 +357,8 @@ class PushService:
                         print(f"   Message: {str(e)}")
                         import traceback
                         traceback.print_exc()
+            
+            print(f"\n📊 Resultado: {success_count}/{len(subscriptions)} enviados com sucesso")
             
             return success_count > 0
             
